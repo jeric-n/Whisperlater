@@ -1,4 +1,4 @@
-# app.py (Final corrected version with StopIteration fix)
+# app.py (Final version with subtitle word-count limiting)
 
 import os
 import torch
@@ -54,12 +54,51 @@ except Exception as e:
     pipe = None
 
 
+# --- NEW HELPER: Splits long subtitle chunks ---
+def split_long_chunks(chunks, max_words=13):
+    """
+    Splits chunks with more than max_words into smaller chunks,
+    approximating timestamps for the new splits.
+    """
+    new_chunks = []
+    for chunk in chunks:
+        words = chunk["text"].strip().split()
+        if len(words) > max_words:
+            logging.info(f"Splitting a long chunk with {len(words)} words.")
+
+            # Calculate approximate duration per word
+            start_time, end_time = chunk["timestamp"]
+            duration = end_time - start_time
+            # Avoid division by zero if there are no words
+            duration_per_word = duration / len(words) if len(words) > 0 else 0
+
+            current_word_index = 0
+            while current_word_index < len(words):
+                split_words = words[current_word_index : current_word_index + max_words]
+
+                # Calculate new timestamps
+                new_start_time = start_time + (current_word_index * duration_per_word)
+                new_end_time = new_start_time + (len(split_words) * duration_per_word)
+
+                new_chunks.append(
+                    {
+                        "timestamp": (new_start_time, new_end_time),
+                        "text": " ".join(split_words),
+                    }
+                )
+                current_word_index += max_words
+        else:
+            # Chunk is short enough, add it as is
+            new_chunks.append(chunk)
+
+    return new_chunks
+
+
 # --- Helper Function to Format SRT ---
 def format_as_srt(result_chunks):
     srt_content = ""
     for i, chunk in enumerate(result_chunks):
-        start_time = chunk["timestamp"][0]
-        end_time = chunk["timestamp"][1]
+        start_time, end_time = chunk["timestamp"]
         text = chunk["text"].strip()
 
         if start_time is None or end_time is None:
@@ -125,9 +164,7 @@ def transcribe():
             )
         except ffmpeg.Error as e:
             logging.error(f"FFmpeg error: {e.stderr.decode()}")
-            return jsonify(
-                {"error": "FFmpeg failed. Ensure it's installed and in PATH."}
-            ), 500
+            return jsonify({"error": "FFmpeg failed."}), 500
 
         audio_np = np.frombuffer(out, np.int16).flatten().astype(np.float32) / 32768.0
 
@@ -140,25 +177,22 @@ def transcribe():
             original_chunks = pass1_result["chunks"]
 
             translated_chunks = []
-            total_chunks = len(original_chunks)
             for i, chunk in enumerate(original_chunks):
-                logging.info(f"Translating chunk {i + 1}/{total_chunks}...")
+                logging.info(f"Translating chunk {i + 1}/{len(original_chunks)}...")
                 start_time, end_time = chunk["timestamp"]
 
                 if start_time is None or end_time is None:
                     continue
 
-                start_sample = int(start_time * 16000)
-                end_sample = int(end_time * 16000)
+                start_sample, end_sample = (
+                    int(start_time * 16000),
+                    int(end_time * 16000),
+                )
                 audio_slice = audio_np[start_sample:end_sample]
 
-                # V-- THIS IS THE FIX: Check if the audio slice is empty --V
                 if audio_slice.size == 0:
-                    logging.warning(
-                        f"Skipping empty audio chunk {i + 1} at {start_time:.2f}s."
-                    )
+                    logging.warning(f"Skipping empty audio chunk {i + 1}.")
                     continue
-                # ^-- END OF FIX --^
 
                 translate_kwargs = generate_kwargs.copy()
                 translate_kwargs["task"] = "translate"
@@ -168,7 +202,9 @@ def transcribe():
                     {"timestamp": (start_time, end_time), "text": pass2_result["text"]}
                 )
 
-            output_content = format_as_srt(translated_chunks)
+            # Apply chunk splitting to the translated chunks
+            final_chunks = split_long_chunks(translated_chunks)
+            output_content = format_as_srt(final_chunks)
             output_filename = os.path.splitext(filename)[0] + ".srt"
 
         else:
@@ -177,7 +213,9 @@ def transcribe():
             result = pipe(audio_np.copy(), generate_kwargs=generate_kwargs)
 
             if output_format == "srt" and task == "transcribe":
-                output_content = format_as_srt(result["chunks"])
+                # Apply chunk splitting to the transcribed chunks
+                final_chunks = split_long_chunks(result["chunks"])
+                output_content = format_as_srt(final_chunks)
                 output_filename = os.path.splitext(filename)[0] + ".srt"
             else:
                 output_content = result["text"]
