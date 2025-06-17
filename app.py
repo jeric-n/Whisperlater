@@ -1,11 +1,11 @@
-# app.py (Final version with subtitle word-count limiting)
+# app.py (Final High-Performance Version with Full Anti-Hallucination)
 
 import os
 import torch
 import ffmpeg
 import numpy as np
 from flask import Flask, request, render_template_string, jsonify
-from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
+from faster_whisper import WhisperModel
 import tempfile
 import logging
 
@@ -19,67 +19,37 @@ UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 
-# --- Load Whisper Model ---
-pipe = None
+# --- Load Optimized Whisper Model ---
+model = None
 try:
-    device = "cuda:0" if torch.cuda.is_available() else "cpu"
-    torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
-    model_id = "openai/whisper-large-v3"
+    model_path = "whisper-large-v3-ct2-float16"
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(
+            f"Model directory not found at '{model_path}'. Please run the conversion command first."
+        )
 
-    logging.info(f"Loading model '{model_id}' on device '{device}'...")
-
-    model = AutoModelForSpeechSeq2Seq.from_pretrained(
-        model_id,
-        torch_dtype=torch_dtype,
-        low_cpu_mem_usage=True,
-        use_safetensors=True,
-        device_map="auto",
-        load_in_8bit=True,
-    )
-    processor = AutoProcessor.from_pretrained(model_id)
-
-    pipe = pipeline(
-        "automatic-speech-recognition",
-        model=model,
-        tokenizer=processor.tokenizer,
-        feature_extractor=processor.feature_extractor,
-        chunk_length_s=30,
-        batch_size=8,
-        return_timestamps=True,
-        torch_dtype=torch_dtype,
-    )
-    logging.info("Model loaded successfully.")
+    logging.info(f"Loading optimized CTranslate2 model from '{model_path}'...")
+    model = WhisperModel(model_path, device="cuda", compute_type="float16")
+    logging.info("Optimized model loaded successfully.")
 except Exception as e:
-    logging.error(f"FATAL: Failed to load the Whisper model: {e}")
-    pipe = None
+    logging.error(f"FATAL: Failed to load the faster-whisper model: {e}", exc_info=True)
+    model = None
 
 
-# --- NEW HELPER: Splits long subtitle chunks ---
+# --- Helper Function: Splits long subtitle chunks ---
 def split_long_chunks(chunks, max_words=13):
-    """
-    Splits chunks with more than max_words into smaller chunks,
-    approximating timestamps for the new splits.
-    """
     new_chunks = []
     for chunk in chunks:
         words = chunk["text"].strip().split()
         if len(words) > max_words:
-            logging.info(f"Splitting a long chunk with {len(words)} words.")
-
-            # Calculate approximate duration per word
             start_time, end_time = chunk["timestamp"]
             duration = end_time - start_time
-            # Avoid division by zero if there are no words
             duration_per_word = duration / len(words) if len(words) > 0 else 0
-
             current_word_index = 0
             while current_word_index < len(words):
                 split_words = words[current_word_index : current_word_index + max_words]
-
-                # Calculate new timestamps
                 new_start_time = start_time + (current_word_index * duration_per_word)
                 new_end_time = new_start_time + (len(split_words) * duration_per_word)
-
                 new_chunks.append(
                     {
                         "timestamp": (new_start_time, new_end_time),
@@ -88,22 +58,18 @@ def split_long_chunks(chunks, max_words=13):
                 )
                 current_word_index += max_words
         else:
-            # Chunk is short enough, add it as is
             new_chunks.append(chunk)
-
     return new_chunks
 
 
-# --- Helper Function to Format SRT ---
+# --- Helper Function: Formats chunks to SRT ---
 def format_as_srt(result_chunks):
     srt_content = ""
     for i, chunk in enumerate(result_chunks):
         start_time, end_time = chunk["timestamp"]
         text = chunk["text"].strip()
-
         if start_time is None or end_time is None:
             continue
-
         start_srt = f"{int(start_time // 3600):02}:{int((start_time % 3600) // 60):02}:{int(start_time % 60):02},{int((start_time * 1000) % 1000):03}"
         end_srt = f"{int(end_time // 3600):02}:{int((end_time % 3600) // 60):02}:{int(end_time % 60):02},{int((end_time * 1000) % 1000):03}"
         srt_content += f"{i + 1}\n{start_srt} --> {end_srt}\n{text}\n\n"
@@ -118,7 +84,7 @@ def index():
 
 @app.route("/transcribe", methods=["POST"])
 def transcribe():
-    if not pipe:
+    if not model:
         return jsonify({"error": "Model not available"}), 500
     if "file" not in request.files:
         return jsonify({"error": "No file part"}), 400
@@ -129,17 +95,10 @@ def transcribe():
     task = request.form.get("task", "transcribe")
     language = request.form.get("language", "auto")
     output_format = request.form.get("format", "txt")
-
-    generate_kwargs = {
-        "temperature": 0.2,
-        "no_repeat_ngram_size": 10,
-        "logprob_threshold": -0.8,
-    }
-    if language != "auto":
-        generate_kwargs["language"] = language
+    language_code = language if language != "auto" else None
 
     logging.info(
-        f"New request: Task='{task}', Language='{language}', Output='{output_format}'"
+        f"New request: Task='{task}', Language='{language_code or 'auto-detect'}', Output='{output_format}'"
     )
 
     temp_path = None
@@ -149,8 +108,8 @@ def transcribe():
             suffix=os.path.splitext(filename)[1],
             delete=False,
             dir=app.config["UPLOAD_FOLDER"],
-        ) as tmp_upload:
-            temp_path = tmp_upload.name
+        ) as tmp:
+            temp_path = tmp.name
             file.save(temp_path)
 
         logging.info("Loading and converting audio file to numpy array...")
@@ -168,58 +127,31 @@ def transcribe():
 
         audio_np = np.frombuffer(out, np.int16).flatten().astype(np.float32) / 32768.0
 
-        if task == "translate" and output_format == "srt":
-            logging.info("Performing two-pass translation for SRT...")
+        # --- Reworked Logic with faster-whisper AND Anti-Hallucination Settings ---
+        segments_generator, info = model.transcribe(
+            audio_np,
+            beam_size=5,
+            language=language_code,
+            task=task,
+            # --- Anti-Hallucination & Quality-Enhancing Parameters ---
+            temperature=0.3,  # User-requested temperature
+            no_repeat_ngram_size=10,  # Prevents looping phrases
+            log_prob_threshold=-0.8,  # Filters out low-probability (garbage) tokens
+            suppress_tokens=[-1],  # Suppresses tokens that are known to cause issues
+        )
 
-            transcribe_kwargs = generate_kwargs.copy()
-            transcribe_kwargs["task"] = "transcribe"
-            pass1_result = pipe(audio_np.copy(), generate_kwargs=transcribe_kwargs)
-            original_chunks = pass1_result["chunks"]
+        logging.info("Transcription complete. Formatting output...")
+        raw_chunks = [
+            {"timestamp": (s.start, s.end), "text": s.text} for s in segments_generator
+        ]
 
-            translated_chunks = []
-            for i, chunk in enumerate(original_chunks):
-                logging.info(f"Translating chunk {i + 1}/{len(original_chunks)}...")
-                start_time, end_time = chunk["timestamp"]
-
-                if start_time is None or end_time is None:
-                    continue
-
-                start_sample, end_sample = (
-                    int(start_time * 16000),
-                    int(end_time * 16000),
-                )
-                audio_slice = audio_np[start_sample:end_sample]
-
-                if audio_slice.size == 0:
-                    logging.warning(f"Skipping empty audio chunk {i + 1}.")
-                    continue
-
-                translate_kwargs = generate_kwargs.copy()
-                translate_kwargs["task"] = "translate"
-                pass2_result = pipe(audio_slice, generate_kwargs=translate_kwargs)
-
-                translated_chunks.append(
-                    {"timestamp": (start_time, end_time), "text": pass2_result["text"]}
-                )
-
-            # Apply chunk splitting to the translated chunks
-            final_chunks = split_long_chunks(translated_chunks)
+        if output_format == "srt":
+            final_chunks = split_long_chunks(raw_chunks)
             output_content = format_as_srt(final_chunks)
             output_filename = os.path.splitext(filename)[0] + ".srt"
-
         else:
-            logging.info("Performing single-pass transcription/translation...")
-            generate_kwargs["task"] = task
-            result = pipe(audio_np.copy(), generate_kwargs=generate_kwargs)
-
-            if output_format == "srt" and task == "transcribe":
-                # Apply chunk splitting to the transcribed chunks
-                final_chunks = split_long_chunks(result["chunks"])
-                output_content = format_as_srt(final_chunks)
-                output_filename = os.path.splitext(filename)[0] + ".srt"
-            else:
-                output_content = result["text"]
-                output_filename = os.path.splitext(filename)[0] + ".txt"
+            output_content = " ".join(chunk["text"].strip() for chunk in raw_chunks)
+            output_filename = os.path.splitext(filename)[0] + ".txt"
 
         return jsonify({"filename": output_filename, "content": output_content})
 
