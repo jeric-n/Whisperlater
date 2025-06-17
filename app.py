@@ -1,11 +1,11 @@
-# app.py (Final High-Performance Version with Full Anti-Hallucination)
+# app.py (Final version with Silero VAD pre-processing and advanced anti-hallucination)
 
 import os
 import torch
 import ffmpeg
 import numpy as np
 from flask import Flask, request, render_template_string, jsonify
-from faster_whisper import WhisperModel
+from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
 import tempfile
 import logging
 
@@ -19,24 +19,54 @@ UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 
-# --- Load Optimized Whisper Model ---
-model = None
+# --- Load Models (Whisper and VAD) ---
+pipe = None
+vad_model = None
 try:
-    model_path = "whisper-large-v3-ct2-float16"
-    if not os.path.exists(model_path):
-        raise FileNotFoundError(
-            f"Model directory not found at '{model_path}'. Please run the conversion command first."
-        )
+    # 1. Load Whisper Model
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"
+    torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
+    model_id = "openai/whisper-large-v3"
 
-    logging.info(f"Loading optimized CTranslate2 model from '{model_path}'...")
-    model = WhisperModel(model_path, device="cuda", compute_type="float16")
-    logging.info("Optimized model loaded successfully.")
+    logging.info(f"Loading Whisper model '{model_id}' on device '{device}'...")
+
+    model = AutoModelForSpeechSeq2Seq.from_pretrained(
+        model_id,
+        torch_dtype=torch_dtype,
+        low_cpu_mem_usage=True,
+        use_safetensors=True,
+        device_map="auto",
+        load_in_8bit=True,
+    )
+    processor = AutoProcessor.from_pretrained(model_id)
+
+    pipe = pipeline(
+        "automatic-speech-recognition",
+        model=model,
+        tokenizer=processor.tokenizer,
+        feature_extractor=processor.feature_extractor,
+        chunk_length_s=30,
+        batch_size=8,
+        return_timestamps=True,
+        torch_dtype=torch_dtype,
+    )
+
+    # 2. Load Silero VAD model
+    logging.info("Loading Silero VAD model...")
+    vad_model, utils = torch.hub.load(
+        repo_or_dir="snakers4/silero-vad", model="silero_vad", force_reload=False
+    )
+    (get_speech_timestamps, save_audio, read_audio, VADIterator, collect_chunks) = utils
+
+    logging.info("All models loaded successfully.")
+
 except Exception as e:
-    logging.error(f"FATAL: Failed to load the faster-whisper model: {e}", exc_info=True)
-    model = None
+    logging.error(f"FATAL: Failed to load models: {e}", exc_info=True)
+    pipe = None
+    vad_model = None
 
 
-# --- Helper Function: Splits long subtitle chunks ---
+# --- Helper Functions ---
 def split_long_chunks(chunks, max_words=13):
     new_chunks = []
     for chunk in chunks:
@@ -48,13 +78,10 @@ def split_long_chunks(chunks, max_words=13):
             current_word_index = 0
             while current_word_index < len(words):
                 split_words = words[current_word_index : current_word_index + max_words]
-                new_start_time = start_time + (current_word_index * duration_per_word)
-                new_end_time = new_start_time + (len(split_words) * duration_per_word)
+                new_start = start_time + (current_word_index * duration_per_word)
+                new_end = new_start + (len(split_words) * duration_per_word)
                 new_chunks.append(
-                    {
-                        "timestamp": (new_start_time, new_end_time),
-                        "text": " ".join(split_words),
-                    }
+                    {"timestamp": (new_start, new_end), "text": " ".join(split_words)}
                 )
                 current_word_index += max_words
         else:
@@ -62,7 +89,6 @@ def split_long_chunks(chunks, max_words=13):
     return new_chunks
 
 
-# --- Helper Function: Formats chunks to SRT ---
 def format_as_srt(result_chunks):
     srt_content = ""
     for i, chunk in enumerate(result_chunks):
@@ -84,8 +110,8 @@ def index():
 
 @app.route("/transcribe", methods=["POST"])
 def transcribe():
-    if not model:
-        return jsonify({"error": "Model not available"}), 500
+    if not pipe or not vad_model:
+        return jsonify({"error": "A required model is not available."}), 500
     if "file" not in request.files:
         return jsonify({"error": "No file part"}), 400
     file = request.files["file"]
@@ -95,28 +121,37 @@ def transcribe():
     task = request.form.get("task", "transcribe")
     language = request.form.get("language", "auto")
     output_format = request.form.get("format", "txt")
-    language_code = language if language != "auto" else None
+
+    # Advanced anti-hallucination parameters
+    generate_kwargs = {
+        "temperature": (0.0, 0.2, 0.4, 0.6, 0.8),  # Fallback temperatures
+        "suppress_tokens": [-1],  # Required to enable temperature fallback
+        "compression_ratio_threshold": 2.4,
+        "logprob_threshold": -0.8,
+        "no_repeat_ngram_size": 10,
+    }
+    if language != "auto":
+        generate_kwargs["language"] = language
 
     logging.info(
-        f"New request: Task='{task}', Language='{language_code or 'auto-detect'}', Output='{output_format}'"
+        f"New request: Task='{task}', Language='{language}', Output='{output_format}'"
     )
 
     temp_path = None
     try:
-        filename = file.filename
         with tempfile.NamedTemporaryFile(
-            suffix=os.path.splitext(filename)[1],
-            delete=False,
-            dir=app.config["UPLOAD_FOLDER"],
-        ) as tmp:
-            temp_path = tmp.name
+            suffix=os.path.splitext(file.filename)[1], delete=False
+        ) as tmp_upload:
+            temp_path = tmp_upload.name
             file.save(temp_path)
 
-        logging.info("Loading and converting audio file to numpy array...")
+        # 1. Load audio using FFmpeg
+        logging.info("Loading and converting audio file with FFmpeg...")
+        SAMPLING_RATE = 16000
         try:
             out, _ = (
                 ffmpeg.input(temp_path, threads=0)
-                .output("-", format="s16le", ac=1, ar=16000)
+                .output("-", format="s16le", ac=1, ar=SAMPLING_RATE)
                 .run(
                     cmd=["ffmpeg", "-nostdin"], capture_stdout=True, capture_stderr=True
                 )
@@ -125,33 +160,67 @@ def transcribe():
             logging.error(f"FFmpeg error: {e.stderr.decode()}")
             return jsonify({"error": "FFmpeg failed."}), 500
 
-        audio_np = np.frombuffer(out, np.int16).flatten().astype(np.float32) / 32768.0
+        audio_np_s16 = np.frombuffer(out, np.int16)
 
-        # --- Reworked Logic with faster-whisper AND Anti-Hallucination Settings ---
-        segments_generator, info = model.transcribe(
-            audio_np,
-            beam_size=5,
-            language=language_code,
-            task=task,
-            # --- Anti-Hallucination & Quality-Enhancing Parameters ---
-            temperature=0.3,  # User-requested temperature
-            no_repeat_ngram_size=10,  # Prevents looping phrases
-            log_prob_threshold=-0.8,  # Filters out low-probability (garbage) tokens
-            suppress_tokens=[-1],  # Suppresses tokens that are known to cause issues
+        # 2. Get speech timestamps using Silero VAD
+        logging.info("Detecting speech segments with Silero VAD...")
+        # Silero VAD requires a torch tensor
+        audio_tensor = torch.from_numpy(audio_np_s16).float() / 32768.0
+        speech_timestamps = get_speech_timestamps(
+            audio_tensor,
+            vad_model,
+            sampling_rate=SAMPLING_RATE,
+            min_silence_duration_ms=500,
         )
 
-        logging.info("Transcription complete. Formatting output...")
-        raw_chunks = [
-            {"timestamp": (s.start, s.end), "text": s.text} for s in segments_generator
-        ]
+        if not speech_timestamps:
+            return jsonify(
+                {
+                    "filename": "result.txt",
+                    "content": "[No speech detected in the audio.]",
+                }
+            )
 
+        # 3. Transcribe/Translate each speech chunk
+        processed_chunks = []
+        total_chunks = len(speech_timestamps)
+        for i, segment in enumerate(speech_timestamps):
+            logging.info(f"Processing speech chunk {i + 1}/{total_chunks}...")
+            start_sample, end_sample = segment["start"], segment["end"]
+            audio_slice = (
+                audio_np_s16[start_sample:end_sample].astype(np.float32) / 32768.0
+            )
+
+            if audio_slice.size == 0:
+                continue
+
+            # Set the task for Whisper
+            generate_kwargs["task"] = task
+            result = pipe(audio_slice, generate_kwargs=generate_kwargs)
+
+            # Preserve the original, accurate VAD timestamp
+            processed_chunks.append(
+                {
+                    "timestamp": (
+                        start_sample / SAMPLING_RATE,
+                        end_sample / SAMPLING_RATE,
+                    ),
+                    "text": result["text"],
+                }
+            )
+
+        # 4. Post-process and format the output
         if output_format == "srt":
-            final_chunks = split_long_chunks(raw_chunks)
+            final_chunks = split_long_chunks(
+                processed_chunks
+            )  # Apply word-limit splitting
             output_content = format_as_srt(final_chunks)
-            output_filename = os.path.splitext(filename)[0] + ".srt"
-        else:
-            output_content = " ".join(chunk["text"].strip() for chunk in raw_chunks)
-            output_filename = os.path.splitext(filename)[0] + ".txt"
+            output_filename = os.path.splitext(file.filename)[0] + ".srt"
+        else:  # .txt format
+            output_content = "\n".join(
+                chunk["text"].strip() for chunk in processed_chunks
+            )
+            output_filename = os.path.splitext(file.filename)[0] + ".txt"
 
         return jsonify({"filename": output_filename, "content": output_content})
 
