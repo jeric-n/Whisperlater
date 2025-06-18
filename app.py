@@ -169,7 +169,7 @@ def transcribe():
             vad_model,
             sampling_rate=SAMPLING_RATE,
             threshold=float(0.4),
-            min_silence_duration_ms=int(250),
+            min_silence_duration_ms=int(500),
         )
 
         if not speech_timestamps:
@@ -194,7 +194,7 @@ def transcribe():
             "no_speech_threshold": float(
                 0.4
             ),  # This applies to faster-whisper's internal check on the slice
-            "compression_ratio_threshold": float(2.2),
+            "compression_ratio_threshold": float(2.3),
             "condition_on_previous_text": True,
             "patience": float(1.5),
             "repetition_penalty": float(1.2),
@@ -203,7 +203,7 @@ def transcribe():
         }
         if task == "translate":  # Slightly different initial temp for translation
             fw_transcribe_options["temperature"] = tuple(
-                float(t) for t in [0.2, 0.4, 0.6, 0.8]
+                float(t) for t in [0.2, 0.4, 0.6, 0.8, 1.0]
             )
 
         logging.info(
