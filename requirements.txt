@@ -1,0 +1,6 @@
+# PyTorch is installed separately in the Dockerfile.
+ctranslate2[cuda]==4.4.0
+faster-whisper
+flask
+ffmpeg-python
+numpy

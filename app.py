@@ -1,11 +1,11 @@
-# app.py (Final version with Silero VAD pre-processing and advanced anti-hallucination)
+# app.py (Combined Silero VAD pre-processing with faster-whisper optimizations)
 
 import os
 import torch
 import ffmpeg
 import numpy as np
 from flask import Flask, request, render_template_string, jsonify
-from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
+from faster_whisper import WhisperModel  # Using faster-whisper
 import tempfile
 import logging
 
@@ -19,54 +19,51 @@ UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 
-# --- Load Models (Whisper and VAD) ---
-pipe = None
+# --- Load Models (faster-whisper and VAD) ---
+whisper_model = None
 vad_model = None
+get_speech_timestamps_fn = None  # To store the VAD function
+
 try:
-    # 1. Load Whisper Model
-    device = "cuda:0" if torch.cuda.is_available() else "cpu"
-    torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
-    model_id = "openai/whisper-large-v3"
+    # 1. Load faster-whisper Model
+    model_path = "whisper-large-v3-ct2-float16"  # Your CTranslate2 converted model
+    if not os.path.exists(model_path):
+        # Attempt to guide the user if the model isn't converted
+        logging.error(f"CTranslate2 model directory not found at '{model_path}'.")
+        logging.error(
+            "Please ensure you have converted the Whisper model to CTranslate2 format."
+        )
+        logging.error(
+            "You can do this by running: pip install ctranslate2[transformers]"
+        )
+        logging.error(
+            "Then: ct2-transformers-converter --model openai/whisper-large-v3 --output_dir whisper-large-v3-ct2-float16 --quantization float16 --force"
+        )
+        raise FileNotFoundError(f"Model directory not found: {model_path}")
 
-    logging.info(f"Loading Whisper model '{model_id}' on device '{device}'...")
-
-    model = AutoModelForSpeechSeq2Seq.from_pretrained(
-        model_id,
-        torch_dtype=torch_dtype,
-        low_cpu_mem_usage=True,
-        use_safetensors=True,
-        device_map="auto",
-        load_in_8bit=True,
-    )
-    processor = AutoProcessor.from_pretrained(model_id)
-
-    pipe = pipeline(
-        "automatic-speech-recognition",
-        model=model,
-        tokenizer=processor.tokenizer,
-        feature_extractor=processor.feature_extractor,
-        chunk_length_s=30,
-        batch_size=8,
-        return_timestamps=True,
-        torch_dtype=torch_dtype,
-    )
+    logging.info(f"Loading faster-whisper model from '{model_path}'...")
+    whisper_model = WhisperModel(model_path, device="cuda", compute_type="float16")
 
     # 2. Load Silero VAD model
     logging.info("Loading Silero VAD model...")
-    vad_model, utils = torch.hub.load(
-        repo_or_dir="snakers4/silero-vad", model="silero_vad", force_reload=False
+    vad_model_hub, utils = torch.hub.load(
+        repo_or_dir="snakers4/silero-vad",
+        model="silero_vad",
+        force_reload=False,
+        trust_repo=True,
     )
-    (get_speech_timestamps, save_audio, read_audio, VADIterator, collect_chunks) = utils
+    vad_model = vad_model_hub  # Assign to the global variable
+    get_speech_timestamps_fn = utils[0]  # Store the function
 
     logging.info("All models loaded successfully.")
 
 except Exception as e:
     logging.error(f"FATAL: Failed to load models: {e}", exc_info=True)
-    pipe = None
+    whisper_model = None
     vad_model = None
 
 
-# --- Helper Functions ---
+# --- Helper Functions (split_long_chunks, format_as_srt - no changes needed) ---
 def split_long_chunks(chunks, max_words=13):
     new_chunks = []
     for chunk in chunks:
@@ -110,7 +107,9 @@ def index():
 
 @app.route("/transcribe", methods=["POST"])
 def transcribe():
-    if not pipe or not vad_model:
+    if (
+        not whisper_model or not vad_model or not get_speech_timestamps_fn
+    ):  # Check all models
         return jsonify({"error": "A required model is not available."}), 500
     if "file" not in request.files:
         return jsonify({"error": "No file part"}), 400
@@ -121,37 +120,30 @@ def transcribe():
     task = request.form.get("task", "transcribe")
     language = request.form.get("language", "auto")
     output_format = request.form.get("format", "txt")
-
-    # Advanced anti-hallucination parameters
-    generate_kwargs = {
-        "temperature": (0.0, 0.2, 0.4, 0.6, 0.8),  # Fallback temperatures
-        "suppress_tokens": [-1],  # Required to enable temperature fallback
-        "compression_ratio_threshold": 2.4,
-        "logprob_threshold": -0.8,
-        "no_repeat_ngram_size": 10,
-    }
-    if language != "auto":
-        generate_kwargs["language"] = language
+    language_code = language if language != "auto" else None
 
     logging.info(
-        f"New request: Task='{task}', Language='{language}', Output='{output_format}'"
+        f"New request: Task='{task}', Language='{language_code or 'auto-detect'}', Output='{output_format}'"
     )
 
     temp_path = None
     try:
+        # Save uploaded file temporarily
         with tempfile.NamedTemporaryFile(
-            suffix=os.path.splitext(file.filename)[1], delete=False
+            suffix=os.path.splitext(file.filename)[1],
+            delete=False,
+            dir=app.config["UPLOAD_FOLDER"],
         ) as tmp_upload:
             temp_path = tmp_upload.name
             file.save(temp_path)
 
-        # 1. Load audio using FFmpeg
+        # 1. Load audio using FFmpeg and convert to NumPy array
         logging.info("Loading and converting audio file with FFmpeg...")
-        SAMPLING_RATE = 16000
+        SAMPLING_RATE = 16000  # Whisper and Silero VAD expect 16kHz
         try:
             out, _ = (
                 ffmpeg.input(temp_path, threads=0)
-                .output("-", format="s16le", ac=1, ar=SAMPLING_RATE)
+                .output("-", format="s16le", ac=1, ar=SAMPLING_RATE)  # s16le for VAD
                 .run(
                     cmd=["ffmpeg", "-nostdin"], capture_stdout=True, capture_stderr=True
                 )
@@ -160,65 +152,114 @@ def transcribe():
             logging.error(f"FFmpeg error: {e.stderr.decode()}")
             return jsonify({"error": "FFmpeg failed."}), 500
 
-        audio_np_s16 = np.frombuffer(out, np.int16)
+        audio_np_s16 = np.frombuffer(out, np.int16)  # For VAD
 
         # 2. Get speech timestamps using Silero VAD
         logging.info("Detecting speech segments with Silero VAD...")
-        # Silero VAD requires a torch tensor
-        audio_tensor = torch.from_numpy(audio_np_s16).float() / 32768.0
-        speech_timestamps = get_speech_timestamps(
-            audio_tensor,
+        audio_tensor_for_vad = torch.from_numpy(audio_np_s16).float() / 32768.0
+
+        # --- THIS IS THE FIX ---
+        # Move the audio tensor to the GPU if CUDA is available
+        if torch.cuda.is_available():
+            audio_tensor_for_vad = audio_tensor_for_vad.to("cuda")
+        # --- END OF FIX ---
+
+        speech_timestamps = get_speech_timestamps_fn(  # Use the stored function
+            audio_tensor_for_vad,  # Now on the correct device
             vad_model,
             sampling_rate=SAMPLING_RATE,
-            min_silence_duration_ms=500,
+            threshold=float(0.4),
+            min_silence_duration_ms=int(250),
         )
 
         if not speech_timestamps:
             return jsonify(
                 {
-                    "filename": "result.txt",
-                    "content": "[No speech detected in the audio.]",
+                    "filename": os.path.splitext(file.filename)[0] + ".txt",
+                    "content": "[No speech detected by VAD in the audio.]",
                 }
             )
 
-        # 3. Transcribe/Translate each speech chunk
-        processed_chunks = []
-        total_chunks = len(speech_timestamps)
-        for i, segment in enumerate(speech_timestamps):
-            logging.info(f"Processing speech chunk {i + 1}/{total_chunks}...")
-            start_sample, end_sample = segment["start"], segment["end"]
-            audio_slice = (
-                audio_np_s16[start_sample:end_sample].astype(np.float32) / 32768.0
+        # 3. Transcribe/Translate each speech chunk using faster-whisper
+        all_processed_segments = []
+        total_vad_chunks = len(speech_timestamps)
+
+        # Define faster-whisper options based on our best-tuned settings
+        fw_transcribe_options = {
+            "beam_size": int(7),
+            "language": language_code,
+            "task": task,
+            "temperature": tuple(float(t) for t in [0.0, 0.2, 0.4, 0.6, 0.8]),
+            "log_prob_threshold": float(-1.0),
+            "no_speech_threshold": float(
+                0.4
+            ),  # This applies to faster-whisper's internal check on the slice
+            "compression_ratio_threshold": float(2.2),
+            "condition_on_previous_text": True,
+            "patience": float(1.5),
+            "repetition_penalty": float(1.2),
+            "no_repeat_ngram_size": int(5),
+            "vad_filter": False,  # IMPORTANT: Disable faster-whisper's VAD for pre-segmented chunks
+        }
+        if task == "translate":  # Slightly different initial temp for translation
+            fw_transcribe_options["temperature"] = tuple(
+                float(t) for t in [0.2, 0.4, 0.6, 0.8]
             )
 
-            if audio_slice.size == 0:
+        logging.info(
+            f"Starting transcription with faster-whisper options: {fw_transcribe_options}"
+        )
+
+        for i, vad_segment in enumerate(speech_timestamps):
+            vad_start_sample = vad_segment["start"]
+            vad_end_sample = vad_segment["end"]
+
+            # Offset for this VAD chunk's timestamps
+            chunk_offset_seconds = vad_start_sample / SAMPLING_RATE
+
+            # Slice audio for faster-whisper (expects float32, normalized)
+            audio_slice_f32 = (
+                audio_np_s16[vad_start_sample:vad_end_sample].astype(np.float32)
+                / 32768.0
+            )
+
+            if audio_slice_f32.size == 0:
+                logging.warning(f"Skipping empty audio slice from VAD chunk {i + 1}.")
                 continue
 
-            # Set the task for Whisper
-            generate_kwargs["task"] = task
-            result = pipe(audio_slice, generate_kwargs=generate_kwargs)
+            logging.info(
+                f"Transcribing VAD chunk {i + 1}/{total_vad_chunks} (duration: {len(audio_slice_f32) / SAMPLING_RATE:.2f}s)..."
+            )
 
-            # Preserve the original, accurate VAD timestamp
-            processed_chunks.append(
+            segments_generator, info = whisper_model.transcribe(
+                audio_slice_f32, **fw_transcribe_options
+            )
+
+            for segment in segments_generator:
+                abs_start = chunk_offset_seconds + segment.start
+                abs_end = chunk_offset_seconds + segment.end
+                all_processed_segments.append(
+                    {"timestamp": (abs_start, abs_end), "text": segment.text}
+                )
+
+        if not all_processed_segments:
+            return jsonify(
                 {
-                    "timestamp": (
-                        start_sample / SAMPLING_RATE,
-                        end_sample / SAMPLING_RATE,
-                    ),
-                    "text": result["text"],
+                    "filename": os.path.splitext(file.filename)[0] + ".txt",
+                    "content": "[Whisper detected no speech in VAD segments.]",
                 }
             )
+
+        logging.info("Transcription complete. Formatting output...")
 
         # 4. Post-process and format the output
         if output_format == "srt":
-            final_chunks = split_long_chunks(
-                processed_chunks
-            )  # Apply word-limit splitting
+            final_chunks = split_long_chunks(all_processed_segments)
             output_content = format_as_srt(final_chunks)
             output_filename = os.path.splitext(file.filename)[0] + ".srt"
         else:  # .txt format
             output_content = "\n".join(
-                chunk["text"].strip() for chunk in processed_chunks
+                chunk["text"].strip() for chunk in all_processed_segments
             )
             output_filename = os.path.splitext(file.filename)[0] + ".txt"
 
@@ -235,4 +276,9 @@ def transcribe():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True, threaded=False)
+    # Ensure Silero VAD model is on the same device as Whisper if GPU is used
+    if vad_model and torch.cuda.is_available():
+        vad_model.to("cuda")
+    app.run(
+        host="0.0.0.0", port=5000, debug=False, threaded=False
+    )  # Debug=False for production
