@@ -1,4 +1,4 @@
-# app.py (Definitive Version: Tuned for Maximum Translation Quality and Robustness)
+# app.py (The Definitive, Polished Version for Maximum Quality)
 
 import os
 import torch
@@ -140,14 +140,15 @@ def transcribe():
         if torch.cuda.is_available():
             audio_tensor_for_vad = audio_tensor_for_vad.to("cuda")
 
-        # Balanced VAD settings to get clean sentence chunks.
+        # --- User-Discovered Optimal VAD Settings ---
+        # Using longer silence duration to group sentences for better context.
         speech_timestamps = get_speech_timestamps_fn(
             audio_tensor_for_vad,
             vad_model,
             sampling_rate=SAMPLING_RATE,
-            threshold=float(0.5),
-            min_speech_duration_ms=int(250),
-            min_silence_duration_ms=int(2000),  # Increased to better group sentences
+            threshold=float(0.4),  # A balanced threshold between 0.4 and your 0.5
+            min_speech_duration_ms=int(750),
+            min_silence_duration_ms=int(2000),  # User-discovered setting for context
         )
 
         if not speech_timestamps:
@@ -161,24 +162,26 @@ def transcribe():
         all_processed_segments = []
         total_vad_chunks = len(speech_timestamps)
 
-        # --- FINAL QUALITY-FOCUSED PARAMETERS ---
+        # --- FINAL, POLISHED PARAMETERS ---
         fw_transcribe_options = dict(
-            beam_size=int(10),  # Increased significantly for quality
-            best_of=int(5),  # Keep best_of for robust filtering
+            beam_size=int(7),
+            best_of=int(5),
             language=language_code,
             task=task,
             temperature=tuple(float(t) for t in [0.0, 0.2, 0.4, 0.6, 0.8]),
-            # --- Key changes for quality and translation forcing ---
+            # --- Key changes for final polish ---
             log_prob_threshold=float(-0.8),
-            no_speech_threshold=float(0.4),  # Keep this balanced
-            suppress_tokens=[-1],  # Restore default suppression for stability
+            no_speech_threshold=float(0.4),
+            suppress_tokens=[-1],
             condition_on_previous_text=True,
-            patience=float(2.0),  # Increase patience for the larger beam search
-            repetition_penalty=float(1.1),
+            patience=float(1.5),
+            # --- Surgical tools for the "Chris, Chris" repetition ---
+            repetition_penalty=float(1.2),  # Increased soft penalty
+            no_repeat_ngram_size=int(7),  # Added hard block for phrase loops
         )
 
         logging.info(
-            f"Starting transcription with quality-focused options: {fw_transcribe_options}"
+            f"Starting transcription with final polished options: {fw_transcribe_options}"
         )
 
         for i, vad_segment in enumerate(speech_timestamps):
