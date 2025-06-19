@@ -1,4 +1,3 @@
-
 # Whisperlater - High-Quality Self Host Whisper Transcription and Translations Server
 
 This project provides a simple and powerful web server for generating high-quality transcriptions of audio and video files. It uses a combination of state-of-the-art tools to deliver fast, accurate, and well-formatted results. Supports translations.
