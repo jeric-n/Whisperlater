@@ -1,6 +1,6 @@
-# Whisperlater - High-Quality Self Host Whisper Transcription and Translations Server
+# Whisperlater - High-Quality Self Host AI Whisper Transcription and Translations Server
 
-This project provides a simple and powerful web server for generating high-quality transcriptions of audio and video files. It uses a combination of state-of-the-art tools to deliver fast, accurate, and well-formatted results. Supports translations.
+This project provides a simple and powerful web server for generating high-quality transcriptions of audio and video files using AI. It uses a combination of state-of-the-art tools to deliver fast, accurate, and well-formatted results. Supports translations.
 
 The application is containerized with Docker for easy setup and deployment.
 
@@ -21,7 +21,6 @@ To run this application, you will need:
 
 1.  **An NVIDIA GPU**: The Docker image is configured to use CUDA for GPU acceleration.
 2.  **Docker**: [Install Docker](https://docs.docker.com/engine/install/) on your system.
-3. *Possibly Optional: NVIDIA CUDA Toolkit 12 and CudNN 8 on your host system may help.*
 
 ## How to Run
 
