@@ -19,7 +19,7 @@ The application is containerized with Docker for easy setup and deployment.
 
 To run this application, you will need:
 
-1.  **An NVIDIA GPU**: The Docker image is configured to use CUDA for GPU acceleration.
+1.  **An NVIDIA GPU**: The Docker image is configured to use CUDA for GPU acceleration. *Recommended: 3070 and above. More than 16GB of system RAM is also strongly recommended*
 2.  **Docker**: [Install Docker](https://docs.docker.com/engine/install/) on your system.
 
 ## How to Run
