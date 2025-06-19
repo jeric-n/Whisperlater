@@ -71,6 +71,6 @@ To stop and remove the running container, use the name you assigned to it:
 
 ```bash
 # Stop the container
-docker stop whisperlater-container-container
+docker stop whisperlater-container
 ```
 
