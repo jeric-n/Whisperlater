@@ -146,9 +146,9 @@ def transcribe():
             audio_tensor_for_vad,
             vad_model,
             sampling_rate=SAMPLING_RATE,
-            threshold=float(0.4),  # A balanced threshold between 0.4 and your 0.5
-            min_speech_duration_ms=int(750),
-            min_silence_duration_ms=int(2000),  # User-discovered setting for context
+            threshold=float(0.35),  # A balanced threshold between 0.4 and your 0.5
+            min_speech_duration_ms=int(250),
+            min_silence_duration_ms=int(1250),  # User-discovered setting for context
         )
 
         if not speech_timestamps:
@@ -164,20 +164,20 @@ def transcribe():
 
         # --- FINAL, POLISHED PARAMETERS ---
         fw_transcribe_options = dict(
-            beam_size=int(7),
+            beam_size=int(5),
             best_of=int(5),
             language=language_code,
             task=task,
-            temperature=tuple(float(t) for t in [0.0, 0.2, 0.4, 0.6, 0.8]),
+            temperature=tuple(float(t) for t in [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]),
             # --- Key changes for final polish ---
-            log_prob_threshold=float(-0.8),
-            no_speech_threshold=float(0.4),
+            log_prob_threshold=float(-1.0),
+            no_speech_threshold=float(0.1),
             suppress_tokens=[-1],
-            condition_on_previous_text=True,
+            condition_on_previous_text=False,
             patience=float(1.5),
             # --- Surgical tools for the "Chris, Chris" repetition ---
-            repetition_penalty=float(1.2),  # Increased soft penalty
-            no_repeat_ngram_size=int(7),  # Added hard block for phrase loops
+            repetition_penalty=float(1.1),  # Increased soft penalty
+            no_repeat_ngram_size=int(10),  # Added hard block for phrase loops
         )
 
         logging.info(
