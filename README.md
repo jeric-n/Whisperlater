@@ -51,7 +51,7 @@ docker run --gpus all -p 5000:5000 --name whisperlater-container -d Whisperlater
 
 *   `--gpus all`: Exposes all available host GPUs to the container.
 *   `-p 5000:5000`: Maps port 5000 on your host machine to port 5000 in the container.
-*   `--name whisper-container`: Assigns a memorable name to the container for easy management.
+*   `--name whisperlater-container`: Assigns a memorable name to the container for easy management.
 *   `-d`: Runs the container in detached mode (in the background).
 
 The server is now running!
