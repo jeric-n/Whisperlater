@@ -2,4 +2,4 @@ uploads/
 venv/
 whisper-large-v3-ct2-float16/
 cache/
-cudnn-local-repo-ubuntu2204-9.10.2_1.0-1_amd64.deb
+
