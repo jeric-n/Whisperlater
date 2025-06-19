@@ -38,7 +38,7 @@ cd your-repo-name
 Build the image from the `Dockerfile`. This will download all dependencies, the model and the model conversion, so it may take some time (10-20 minutes depending on your internet connection).
 
 ```bash
-docker build -t Whisperlater .
+docker build -t whisperlater .
 ```
 
 ### 3. Run the Docker Container
@@ -46,7 +46,7 @@ docker build -t Whisperlater .
 Once the image is built, run it as a container. The `--gpus all` flag gives the container access to your GPU.
 
 ```bash
-docker run --gpus all -p 5000:5000 --name whisperlater-container -d Whisperlater
+docker run --gpus all -p 5000:5000 --name whisperlater-container -d whisperlater
 ```
 
 *   `--gpus all`: Exposes all available host GPUs to the container.
