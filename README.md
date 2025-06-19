@@ -30,7 +30,6 @@ Follow these steps to build and run the application using Docker.
 
 ```bash
 git clone https://github.com/jeric-n/Whisperlater.git
-cd your-repo-name
 ```
 
 ### 2. Build the Docker Image
