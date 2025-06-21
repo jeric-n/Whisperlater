@@ -1,74 +1,80 @@
-# Whisperlater - High-Quality Self Host AI Whisper Transcription and Translations Server
+# Whisperlater
 
-This project provides a simple and powerful web server for generating high-quality transcriptions of audio and video files using AI. It uses a combination of state-of-the-art tools to deliver fast, accurate, and well-formatted results. Supports translations.
+**Whisperlater** is a self-hosted, high-performance AI transcription service powered by OpenAI's Whisper `large-v3` model. It provides a sleek, dark-themed web interface to transcribe audio and video files with state-of-the-art accuracy, optimized for both clean audio and noisy environments like gaming streams.
 
-The application is containerized with Docker for easy setup and deployment.
+The entire application is containerized with Docker and accelerated by NVIDIA GPUs, making deployment simple and performance incredibly fast.
+
+---
 
 ## Key Features
 
-*   **High-Speed Transcription**: Powered by `faster-whisper`, a CTranslate2 reimplementation of OpenAI's Whisper model, providing significant speedups on GPU.
-*   **High Accuracy**: Utilizes the `large-v3` Whisper model for state-of-the-art transcription quality.
-*   **Voice Activity Detection (VAD)**: Uses the Silero VAD model to pre-process audio, removing long silences and improving transcription speed and accuracy by focusing only on speech segments.
-*   **Polished Output**:
-    *   Generates both plain text (`.txt`) and subtitle (`.srt`) files.
-    *   Automatically splits long sentences into shorter, more readable subtitle chunks.
-*   **Simple Web Interface**: An easy-to-use, single-page web UI for uploading files and selecting transcription options (task, language, format).
-*   **Easy Deployment**: Fully containerized with Docker, with all models pre-loaded into the image for fast startup.
+- 🚀 **High Performance:** Utilizes `faster-whisper`, a CTranslate2 reimplementation of Whisper that is up to 4 times faster and uses 50% less memory.
+- 💡 **State-of-the-Art Accuracy:** Powered by the `large-v3` model, offering the best available transcription quality and multilingual support.
+- 🌐 **Sleek Web Interface:** A modern, "perfect black" dark theme that's easy on the eyes and simple to use.
+- 🐳 **Dockerized for Easy Deployment:** Get the entire service running with a single `docker-compose` command. No need to manage Python dependencies or model downloads manually.
+- ⚡ **GPU Accelerated:** Natively supports NVIDIA GPUs via the Docker container for maximum transcription speed.
+- 🧠 **Intelligent & Robust:**
+  - **Voice Activity Detection (VAD):** Intelligently filters out silence and non-speech noise before transcription, increasing accuracy and speed.
+  - **Optimized Parameters:** Comes pre-tuned for high accuracy and resistance to background noise.
+  - **Robust Memory Management:** Explicit garbage collection and GPU cache clearing after each job ensures stability for long-running, continuous use.
+- 📄 **Multiple Output Formats:** Download your transcriptions as either plain text (`.txt`) or timestamped subtitles (`.srt`).
+- scalable **Handles Large Files with Ease:** The streaming architecture can process files of any size (e.g., multi-hour podcasts or meetings) with low, constant memory usage.
 
-## Prerequisites
+## Tech Stack
 
-To run this application, you will need:
+- **Backend:** Python 3, Flask
+- **AI Model:** OpenAI Whisper `large-v3`
+- **Inference Engine:** `faster-whisper`
+- **Containerization:** Docker, Docker Compose
+- **Acceleration:** NVIDIA CUDA
 
-1.  **An NVIDIA GPU**: The Docker image is configured to use CUDA for GPU acceleration. *Recommended: 3070 and above. More than 16GB of system RAM is also strongly recommended*
-2.  **Docker**: [Install Docker](https://docs.docker.com/engine/install/) on your system.
+## Getting Started
 
-## How to Run
+Follow these instructions to get your own instance of Whisperlater running.
 
-Follow these steps to build and run the application using Docker.
+### Prerequisites
 
-### 1. Clone the Repository
+- **Docker:** [Install Docker](https://docs.docker.com/get-docker/)
+- **Docker Compose:** Usually included with Docker Desktop. If not, [install Docker Compose](https://docs.docker.com/compose/install/).
+- **NVIDIA GPU:** A CUDA-enabled NVIDIA GPU is required. *3070 and above recommended*
+- **NVIDIA Container Toolkit:** This allows Docker to access your GPU. [Installation instructions](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
 
-```bash
-git clone https://github.com/jeric-n/Whisperlater.git
-```
+### Installation & Running
 
-### 2. Build the Docker Image
+1. **Clone the Repository:**
 
-Build the image from the `Dockerfile`. This will download all dependencies, the model and the model conversion, so it may take some time (10-20 minutes depending on your internet connection).
+    ```bash
+    git clone https://github.com/jeric-n/whisperlater.git
+    cd whisperlater
+    ```
 
-```bash
-docker build -t whisperlater .
-```
+2. **Build the Docker Image:**
+    This command builds the container, installs all dependencies, and downloads/converts the Whisper model. **This first build will take a significant amount of time** (15-30 minutes depending on your internet and CPU speed) as it downloads the ~3 GB model. Subsequent builds will be much faster.
 
-### 3. Run the Docker Container
+    ```bash
+    docker-compose build
+    ```
 
-Once the image is built, run it as a container. The `--gpus all` flag gives the container access to your GPU.
+3. **Start the Service:**
+    Once the build is complete, start the application in detached mode.
 
-```bash
-docker run --gpus all -p 5000:5000 --name whisperlater-container -d whisperlater
-```
+    ```bash
+    docker-compose up -d
+    ```
 
-*   `--gpus all`: Exposes all available host GPUs to the container.
-*   `-p 5000:5000`: Maps port 5000 on your host machine to port 5000 in the container.
-*   `--name whisperlater-container`: Assigns a memorable name to the container for easy management.
-*   `-d`: Runs the container in detached mode (in the background).
+4. **Access the Web UI:**
+    Open your web browser and navigate to:
+    **`http://localhost:5000`**
 
-The server is now running!
+The service is now running! You can upload a file to begin transcribing.
 
-## Usage
+To stop the service, run `docker-compose down`.
 
-1.  Open your web browser and navigate to `http://localhost:5000`.
-2.  Click "Choose File" to select an audio or video file.
-3.  Select your desired options (Task, Language, Format).
-4.  Click "Start Processing".
-5.  Once processing is complete, a download link for the resulting `.txt` or `.srt` file will appear.
+## License
 
-## Stopping the Container
+This project is licensed under the MIT License. See the `LICENSE` file for details.
 
-To stop and remove the running container, use the name you assigned to it:
+## Acknowledgments
 
-```bash
-# Stop the container
-docker stop whisperlater-container
-```
-
+- This project would not be possible without the incredible work of the teams behind [OpenAI's Whisper](https://github.com/openai/whisper) and [SYSTRAN's faster-whisper](https://github.com/SYSTRAN/faster-whisper).
+- Gemini 2.5 Pro for enabling me to get me started with self-hosting AI models, the python libraries, optimizations and the idea itself within a week's time.
