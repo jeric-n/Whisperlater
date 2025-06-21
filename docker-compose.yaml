@@ -1,0 +1,23 @@
+version: "3.8"
+
+services:
+  whisperlater:
+    # Build the image using the Dockerfile in the current directory.
+    build: .
+    # Optional but good practice: name the image it builds.
+    image: whisperlater
+    ports:
+      - "5000:5000"
+    # Mount the current host directory into the container's /app directory.
+    volumes:
+      - .:/app
+    # Request GPU access for the container.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    # Override the Dockerfile's CMD to run Flask's debug server for auto-reloading.
+    command: flask run --host=0.0.0.0 --port=5000 --debug

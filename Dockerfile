@@ -69,7 +69,7 @@ RUN \
     echo "--- Downloading and Converting Whisper Model ---" && \
     ct2-transformers-converter \
         --model openai/whisper-large-v3 \
-        --output_dir whisper-large-v3-ct2-float16 \
+        --output_dir /models/whisper-large-v3-ct2-float16 \
         --quantization float16 \
         --force && \
     \
@@ -78,7 +78,7 @@ RUN \
     # critical parameters like "num_mel_bins": 128 are correctly set.
     # Using a heredoc (<<EOF) is cleaner than a long, escaped echo string.
     echo "--- Applying preprocessor_config.json fix ---" && \
-    cat <<EOF > whisper-large-v3-ct2-float16/preprocessor_config.json
+    cat <<EOF > /models/whisper-large-v3-ct2-float16/preprocessor_config.json
 {
   "chunk_length": 30,
   "feature_extractor_type": "WhisperFeatureExtractor",
@@ -98,8 +98,8 @@ EOF
 
 # --- Stage 4: Application Code and VAD Model Caching ---
 # Copy the application source code into the image.
-COPY app.py ./
-COPY index.html ./
+# COPY app.py ./
+# COPY index.html ./
 
 # Set the cache directory for PyTorch Hub inside the workdir.
 ENV TORCH_HOME=/app/.cache/torch
