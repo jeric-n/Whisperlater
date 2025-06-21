@@ -1,6 +1,5 @@
-# PyTorch is installed separately in the Dockerfile.
-ctranslate2[cuda]==4.4.0
-faster-whisper
-flask
-ffmpeg-python
-numpy
+# requirements.txt
+Flask>=2.0
+faster-whisper>=1.0
+ctranslate2==4.4.0
+# torch/torchaudio are installed separately in the Dockerfile for CUDA compatibility
