@@ -116,9 +116,9 @@ def transcribe():
 
         # VAD Parameters
         vad_parameters = dict(
-            threshold=0.55,  # Increased: Be less sensitive to background noise.
-            min_speech_duration_ms=250,  # Increased: Filter out short game SFX.
-            min_silence_duration_ms=350,  # Increased: Wait for a more definitive pause.
+            threshold=0.55,
+            min_speech_duration_ms=250,
+            min_silence_duration_ms=350,
         )
 
         # Whisper Options
@@ -126,13 +126,13 @@ def transcribe():
             beam_size=5,
             language=language_code,
             task=task,
-            temperature=[0.0, 0.2, 0.4, 0.6],  # Reduced range: Be more conservative.
-            log_prob_threshold=-0.6,  # Increased: Require higher confidence in the transcript.
-            no_speech_threshold=0.7,  # Increased: Stricter internal VAD check.
-            condition_on_previous_text=True,  # Unchanged: Context is still critical.
-            patience=1.0,  # Reduced: Be less patient with low-quality beams.
-            repetition_penalty=1.2,  # Increased: More aggressively penalize repetition from game sounds.
-            no_repeat_ngram_size=10,  # Unchanged: Still a good safeguard.
+            temperature=[0.0, 0.2, 0.4, 0.6],
+            log_prob_threshold=-0.6,
+            no_speech_threshold=0.7,
+            condition_on_previous_text=True,
+            patience=1.0,
+            repetition_penalty=1.2,
+            no_repeat_ngram_size=10,
         )
 
         logging.info(f"Starting transcription with options: {fw_transcribe_options}")
