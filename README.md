@@ -1,6 +1,6 @@
 # Whisperlater
 
-**Whisperlater** is a self-hosted, high-performance AI transcription service powered by OpenAI's Whisper `large-v3` model. It provides a sleek, dark-themed web interface to transcribe audio and video files with state-of-the-art accuracy, optimized for both clean audio and noisy environments like gaming streams and speeches in public.
+**Whisperlater** is a self-hosted, high-performance AI transcription service powered by OpenAI's Whisper `large-v3` model. It provides a sleek, dark-themed web interface to transcribe audio and video files of any language to english with state-of-the-art accuracy, optimized for both clean audio and noisy environments like gaming streams and speeches in public.
 
 The entire application is containerized with Docker and accelerated by NVIDIA GPUs, making deployment simple and performance incredibly fast.
 
@@ -10,7 +10,7 @@ The entire application is containerized with Docker and accelerated by NVIDIA GP
 
 - 🚀 **High Performance:** Utilizes `faster-whisper`, a CTranslate2 reimplementation of Whisper that is up to 4 times faster and uses 50% less memory.
 - 💡 **State-of-the-Art Accuracy:** Powered by the `large-v3` model, offering the best available transcription quality and multilingual support.
-- 🌐 **Sleek Web Interface:** A modern, "perfect black" dark theme that's easy on the eyes and simple to use.
+- 🌐 **Sleek Web Interface:** A modern, dark theme that's easy on the eyes and simple to use.
 - 🐳 **Dockerized for Easy Deployment:** Get the entire service running with a single `docker-compose` command. No need to manage Python dependencies or model downloads manually.
 - ⚡ **GPU Accelerated:** Natively supports NVIDIA GPUs via the Docker container for maximum transcription speed.
 - 🧠 **Intelligent & Robust:**
