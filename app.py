@@ -116,7 +116,7 @@ def transcribe():
 
         # VAD Parameters
         vad_parameters = dict(
-            threshold=0.55,
+            threshold=0.45,
             min_speech_duration_ms=250,
             min_silence_duration_ms=350,
         )
@@ -127,8 +127,8 @@ def transcribe():
             language=language_code,
             task=task,
             temperature=[0.0, 0.2, 0.4, 0.6],
-            log_prob_threshold=-0.6,
-            no_speech_threshold=0.7,
+            log_prob_threshold=-0.8,
+            no_speech_threshold=0.55,
             condition_on_previous_text=True,
             patience=1.0,
             repetition_penalty=1.2,
