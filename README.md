@@ -37,7 +37,7 @@ Follow these instructions to get your own instance of Whisperlater running.
 
 - **Docker:** [Install Docker](https://docs.docker.com/get-docker/)
 - **Docker Compose:** Usually included with Docker Desktop. If not, [install Docker Compose](https://docs.docker.com/compose/install/).
-- **NVIDIA GPU:** A CUDA-enabled NVIDIA GPU is required. *3070 and above recommended*
+- **NVIDIA GPU:** A CUDA-enabled NVIDIA GPU is required. *3060 and above recommended*
 - **NVIDIA Container Toolkit:** This allows Docker to access your GPU. [Installation instructions](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
 
 ### Installation & Running
