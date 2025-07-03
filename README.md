@@ -77,5 +77,5 @@ This project is licensed under the MIT License. See the `LICENSE` file for detai
 
 ## Acknowledgments
 
-- This project would not be possible without the incredible work of the teams behind [OpenAI's Whisper](https://github.com/openai/whisper) and [SYSTRAN's faster-whisper](https://github.com/SYSTRAN/faster-whisper).
+- This project would not be possible without the incredible work of the teams behind [OpenAI's Whisper](https://github.com/openai/whisper) and [SYSTRAN's faster-whisper](https://github.com/SYSTRAN/faster-whisper) and [Silero VAD](https://github.com/snakers4/silero-vad).
 - Gemini 2.5 Pro for enabling me to get me started with self-hosting AI models, the python libraries, optimizations and the idea itself within a week's time.
