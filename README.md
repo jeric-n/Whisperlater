@@ -19,7 +19,7 @@ The entire application is containerized with Docker and accelerated by NVIDIA GP
   - **Optimized Parameters:** Comes pre-tuned for high accuracy and resistance to background noise.
   - **Robust Memory Management:** Explicit garbage collection and GPU cache clearing after each job ensures stability for long-running, continuous use.
 - 📄 **Multiple Output Formats:** Download your transcriptions as either plain text (`.txt`) or timestamped subtitles (`.srt`).
-- scalable **Handles Large Files with Ease:** The streaming architecture can process files of any size (e.g., multi-hour podcasts or meetings) with low, constant memory usage.
+- **Handles Large Files with Ease:** The streaming architecture can process files of any size (e.g., multi-hour podcasts or meetings) with low, constant memory usage.
 
 ## Tech Stack
 
