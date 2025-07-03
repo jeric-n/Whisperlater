@@ -9,12 +9,10 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Etc/UTC
 
 # Update and install essential system dependencies.
-# python3-pip is the only system dependency needed now.
-# ffmpeg and git have been removed as they are no longer required by the refactored app.py.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3-pip \
-    ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
+  python3-pip \
+  ffmpeg \
+  && rm -rf /var/lib/apt/lists/*
 
 # --- Stage 2: Python Environment and Dependencies ---
 WORKDIR /app
@@ -24,31 +22,31 @@ COPY requirements.txt .
 # Install Python packages.
 # --no-cache-dir is used to reduce image size.
 RUN \
-    pip install --no-cache-dir --upgrade pip && \
-    # 1. Install PyTorch first for CUDA 12.1 compatibility.
-    pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121 && \
-    # 2. Install the rest of the packages from the simplified requirements file.
-    pip install --no-cache-dir -r requirements.txt
+  pip install --no-cache-dir --upgrade pip && \
+  # 1. Install PyTorch first for CUDA 12.1 compatibility.
+  pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121 && \
+  # 2. Install the rest of the packages from the simplified requirements file.
+  pip install --no-cache-dir -r requirements.txt
 
 # --- Stage 3: AI Model Preparation ---
 # This stage downloads and converts the Whisper model to the optimized CTranslate2 format.
 # This is done during the build to avoid long download times on container startup.
 RUN \
-    echo "--- Preparing Whisper Model ---" && \
-    # Install 'transformers' temporarily for the converter script.
-    pip install --no-cache-dir "transformers>=4.36.0" && \
-    \
-    # Run the CTranslate2 converter.
-    echo "--- Downloading and Converting Whisper Model ---" && \
-    ct2-transformers-converter \
-        --model openai/whisper-large-v3 \
-        --output_dir /models/whisper-large-v3-ct2-float16 \
-        --quantization float16 \
-        --force && \
-    \
-    # FIX: Ensure a known-good preprocessor_config.json is present.
-    echo "--- Applying preprocessor_config.json fix ---" && \
-    cat <<EOF > /models/whisper-large-v3-ct2-float16/preprocessor_config.json
+  echo "--- Preparing Whisper Model ---" && \
+  # Install 'transformers' temporarily for the converter script.
+  pip install --no-cache-dir "transformers>=4.36.0" && \
+  \
+  # Run the CTranslate2 converter.
+  echo "--- Downloading and Converting Whisper Model ---" && \
+  ct2-transformers-converter \
+  --model openai/whisper-large-v3 \
+  --output_dir /models/whisper-large-v3-ct2-float16 \
+  --quantization float16 \
+  --force && \
+  \
+  # FIX: Ensure a known-good preprocessor_config.json is present.
+  echo "--- Applying preprocessor_config.json fix ---" && \
+  cat <<EOF > /models/whisper-large-v3-ct2-float16/preprocessor_config.json
 {
   "chunk_length_s": 30,
   "chunk_length": 30,
