@@ -1,0 +1,5 @@
+.git
+uploads
+.cache
+__pycache__
+.env

@@ -1,0 +1,36 @@
+# docker-compose.yml
+
+version: "3.8"
+
+services:
+  whisperlater:
+    # Build the image using the Dockerfile in the current directory.
+    # If you change the Dockerfile (e.g., dependencies), you must run 'docker-compose build'.
+    build: .
+
+    # Optional but good practice: name the image it builds.
+    image: whisperlater
+
+    ports:
+      - "5000:5000"
+
+    # The volumes section is for DEVELOPMENT.
+    # It mounts your local code (app.py, etc.) into the container.
+    # This allows the Flask debug server to auto-reload when you save changes to your code.
+    # For a PRODUCTION deployment, you would typically remove the 'volumes' and 'command' sections.
+    volumes:
+      - .:/app
+
+    # Request GPU access for the container, which is essential for Whisper's performance.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    # The command section is for DEVELOPMENT.
+    # It overrides the Dockerfile's CMD to run Flask's built-in debug server.
+    # The '--debug' flag enables auto-reloading of code changes from the volume mount.
+    command: flask run --host=0.0.0.0 --port=5000 --debug
