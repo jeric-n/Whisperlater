@@ -283,10 +283,10 @@ def transcribe():
             segments_generator = generate_segments_with_correct_time()
 
         else:
-            # Transcribe directly with faster-whisper's VAD
+            # Transcribe directly, with faster-whisper's internal VAD disabled.
             segments_generator, _ = whisper_model.transcribe(
                 temp_path,
-                vad_filter=True,  # Use Whisper's VAD
+                vad_filter=False,
                 **transcribe_options,
             )
 
