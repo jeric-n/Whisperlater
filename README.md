@@ -15,7 +15,7 @@ The entire application is containerized with Docker and accelerated by NVIDIA GP
 - 🐳 **Dockerized for Easy Deployment:** Get the entire service running with a single `docker-compose` command. No need to manage Python dependencies or model downloads manually.
 - ⚡ **GPU Accelerated:** Natively supports NVIDIA GPUs via the Docker container for maximum transcription speed.
 - 🧠 **Intelligent & Robust:**
-  - **Optional Voice Activity Detection with Silero VAD (VAD):** Intelligently filters out silence and non-speech noise before transcription, increasing accuracy and speed. VAD can now be optionally enabled/disabled and configured via the UI.
+  - **Optional Voice Activity Detection with Silero VAD (VAD):** Intelligently filters out silence and non-speech noise before transcription, increasing accuracy and speed. VAD can now be optionally enabled/disabled and configured via the UI. This is also recommended for splitting long form audio into manageable 1 hour chunks for memory efficiency.
   - **Optimized Parameters:** Comes pre-tuned for high accuracy and resistance to background noise.
   - **Robust Memory Management:** Explicit garbage collection and GPU cache clearing after each job ensures stability for long-running, continuous use.
 - 📄 **Multiple Output Formats:** Download your transcriptions as either plain text (`.txt`) or timestamped subtitles (`.srt`).
