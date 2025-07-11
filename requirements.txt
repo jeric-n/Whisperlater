@@ -3,3 +3,5 @@ Flask>=2.0
 faster-whisper>=1.0
 ctranslate2==4.4.0
 silero-vad
+soundfile
+numpy
